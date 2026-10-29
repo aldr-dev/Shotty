@@ -12,7 +12,7 @@ final class RecordingControls {
     func show(for selection: RegionSelection) {
         hide()
         let compact = selection.screen.visibleFrame.width < 1000
-        let hosting = NSHostingView(rootView: RecordingControlsView(recorder: .shared, compact: compact))
+        let hosting = NSHostingView(rootView: RecordingControlsView(recorder: .shared, compact: compact).buttonStyle(.hand(.automatic)))
         let size = hosting.fittingSize
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -124,7 +124,7 @@ struct RecordingControlsView: View {
                     .labelStyle(compact ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon))
             }
             .tint(.red)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.hand(.borderedProminent))
             .help(L("Завершить запись"))
         }
         .controlSize(.large)
@@ -132,7 +132,7 @@ struct RecordingControlsView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)).allowsHitTesting(false))
         .fixedSize()
         .onReceive(Timer.publish(every: 0.6, on: .main, in: .common).autoconnect()) { _ in blink.toggle() }
     }

@@ -5,6 +5,14 @@ struct UploadError: LocalizedError {
     var errorDescription: String? { message }
 }
 
+/// The active server's settings at this moment, so a retry picks up fixes made after a failure.
+func currentServerConfig() throws -> ServerConfig {
+    guard let config = ServerSettings.shared.activeConfig else {
+        throw UploadError(message: L("Сервер не настроен"))
+    }
+    return config
+}
+
 struct UploadResult {
     /// Random name the file got on the server.
     let fileName: String
@@ -12,35 +20,43 @@ struct UploadResult {
 }
 
 enum Uploader {
-    static func upload(data: Data, fileExtension: String, config: ServerConfig) async throws -> UploadResult {
+    /// `progress` gets the transferred fraction (0...1) from a background thread once the file starts going out.
+    /// Cancelling the calling task stops the transfer and throws `CancellationError`.
+    static func upload(data: Data, fileExtension: String, config: ServerConfig,
+                       progress: (@Sendable (Double) -> Void)? = nil) async throws -> UploadResult {
         let workDir = try makeWorkDir()
         defer { try? FileManager.default.removeItem(at: workDir) }
         let file = workDir.appendingPathComponent(UUID().uuidString)
         try data.write(to: file)
-        return try await upload(file: file, fileExtension: fileExtension, config: config, workDir: workDir)
+        return try await upload(file: file, fileExtension: fileExtension, config: config, workDir: workDir, progress: progress)
     }
 
-    static func upload(file: URL, config: ServerConfig) async throws -> UploadResult {
+    static func upload(file: URL, config: ServerConfig, progress: (@Sendable (Double) -> Void)? = nil) async throws -> UploadResult {
         let workDir = try makeWorkDir()
         defer { try? FileManager.default.removeItem(at: workDir) }
-        return try await upload(file: file, fileExtension: file.pathExtension, config: config, workDir: workDir)
+        return try await upload(file: file, fileExtension: file.pathExtension, config: config, workDir: workDir, progress: progress)
     }
 
-    private static func upload(file: URL, fileExtension: String, config: ServerConfig, workDir: URL) async throws -> UploadResult {
+    private static func upload(file: URL, fileExtension: String, config: ServerConfig, workDir: URL,
+                               progress: (@Sendable (Double) -> Void)?) async throws -> UploadResult {
         let existing = await remoteFileNames(config: config, workDir: workDir)
+        try Task.checkCancellation()
         let fileName = randomName(fileExtension: fileExtension, existing: existing)
+        let monitor = progress.map { ReadProgressMonitor(file: file, report: $0) }
+        defer { monitor?.stop() }
         switch config.proto {
         case .ftp, .ftps:
             let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             let timeout = max(180, size / 50_000)
             let result = try await runCurl(config: config, extraArgs: ["--ftp-create-dirs", "-T", file.path],
-                                           url: ftpURL(config, fileName: fileName), timeout: timeout)
+                                           url: ftpURL(config, fileName: fileName), timeout: timeout,
+                                           onLaunch: monitor.map { m in { @Sendable pid in m.start(pid: pid) } })
             try checkCurl(result)
         case .sftp:
             var commands = mkdirCommands(for: config.remotePath)
             let remote = remoteFilePath(config.remotePath, fileName)
             commands.append("put \(quote(file.path)) \(quote(remote))")
-            let result = try await runSFTP(config: config, commands: commands, workDir: workDir)
+            let result = try await runSFTP(config: config, commands: commands, workDir: workDir, onLaunch: monitor.map { m in { @Sendable pid in m.start(pid: pid) } })
             try checkSFTP(result)
         }
         return UploadResult(fileName: fileName, link: config.publicLink(for: fileName))
@@ -118,7 +134,8 @@ enum Uploader {
         return url
     }
 
-    private static func runCurl(config c: ServerConfig, extraArgs: [String], url: String, timeout: Int) async throws -> ProcessResult {
+    private static func runCurl(config c: ServerConfig, extraArgs: [String], url: String, timeout: Int,
+                                onLaunch: (@Sendable (pid_t) -> Void)? = nil) async throws -> ProcessResult {
         var args = ["-sS", "--connect-timeout", "15", "--max-time", String(timeout), "-K", "-"]
         if c.proto == .ftps { args.append("--ssl-reqd") }
         if c.proto == .ftps && c.allowInsecureTLS { args.append("-k") }
@@ -130,7 +147,7 @@ enum Uploader {
         if !c.username.isEmpty {
             curlConfig = "user = \"\(escapeCurl(c.username)):\(escapeCurl(c.password))\"\n"
         }
-        return try await ProcessRunner.run("/usr/bin/curl", args, input: Data(curlConfig.utf8))
+        return try await ProcessRunner.run("/usr/bin/curl", args, input: Data(curlConfig.utf8), onLaunch: onLaunch)
     }
 
     private static func escapeCurl(_ s: String) -> String {
@@ -157,7 +174,8 @@ enum Uploader {
 
     // MARK: SFTP via /usr/bin/sftp
 
-    private static func runSFTP(config c: ServerConfig, commands: [String], workDir: URL) async throws -> ProcessResult {
+    private static func runSFTP(config c: ServerConfig, commands: [String], workDir: URL,
+                                onLaunch: (@Sendable (pid_t) -> Void)? = nil) async throws -> ProcessResult {
         let batch = workDir.appendingPathComponent("batch.txt")
         try (commands.joined(separator: "\n") + "\n").write(to: batch, atomically: true, encoding: .utf8)
 
@@ -184,7 +202,7 @@ enum Uploader {
             env["DISPLAY"] = env["DISPLAY"] ?? ":0"
             env["SHOTTY_SFTP_SECRET"] = c.password
         }
-        return try await ProcessRunner.run("/usr/bin/sftp", args, environment: env, input: Data())
+        return try await ProcessRunner.run("/usr/bin/sftp", args, environment: env, input: Data(), onLaunch: onLaunch)
     }
 
     private static func checkSFTP(_ r: ProcessResult) throws {
@@ -253,41 +271,133 @@ struct ProcessResult {
 enum ProcessRunner {
     private final class Box: @unchecked Sendable { var data = Data() }
 
-    static func run(_ executable: String, _ args: [String], environment: [String: String]? = nil, input: Data?) async throws -> ProcessResult {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: executable)
-                process.arguments = args
-                if let environment { process.environment = environment }
-                let outPipe = Pipe(), errPipe = Pipe(), inPipe = Pipe()
-                process.standardOutput = outPipe
-                process.standardError = errPipe
-                process.standardInput = inPipe
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                if let input, !input.isEmpty { inPipe.fileHandleForWriting.write(input) }
-                try? inPipe.fileHandleForWriting.close()
+    /// Lets task cancellation terminate a process that may not have been launched yet.
+    private final class Handle: @unchecked Sendable {
+        private let lock = NSLock()
+        private var process: Process?
+        private var cancelled = false
 
-                let out = Box()
-                let group = DispatchGroup()
-                group.enter()
-                DispatchQueue.global().async {
-                    out.data = outPipe.fileHandleForReading.readDataToEndOfFile()
-                    group.leave()
-                }
-                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-                group.wait()
-                process.waitUntilExit()
-                continuation.resume(returning: ProcessResult(
-                    status: process.terminationStatus,
-                    stdout: String(decoding: out.data, as: UTF8.self),
-                    stderr: String(decoding: errData, as: UTF8.self)))
-            }
+        var isCancelled: Bool { lock.withLock { cancelled } }
+
+        func attach(_ process: Process) {
+            let cancelled = lock.withLock { self.process = process; return self.cancelled }
+            if cancelled { process.terminate() }
         }
+
+        func cancel() {
+            let process = lock.withLock { cancelled = true; return self.process }
+            if process?.isRunning == true { process?.terminate() }
+        }
+    }
+
+    static func run(_ executable: String, _ args: [String], environment: [String: String]? = nil, input: Data?,
+                    onLaunch: (@Sendable (pid_t) -> Void)? = nil) async throws -> ProcessResult {
+        let handle = Handle()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: executable)
+                    process.arguments = args
+                    if let environment { process.environment = environment }
+                    let outPipe = Pipe(), errPipe = Pipe(), inPipe = Pipe()
+                    process.standardOutput = outPipe
+                    process.standardError = errPipe
+                    process.standardInput = inPipe
+                    do {
+                        try process.run()
+                    } catch {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    handle.attach(process)
+                    onLaunch?(process.processIdentifier)
+                    if let input, !input.isEmpty { inPipe.fileHandleForWriting.write(input) }
+                    try? inPipe.fileHandleForWriting.close()
+
+                    let out = Box()
+                    let group = DispatchGroup()
+                    group.enter()
+                    DispatchQueue.global().async {
+                        out.data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                        group.leave()
+                    }
+                    let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    group.wait()
+                    process.waitUntilExit()
+                    if handle.isCancelled {
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+                    continuation.resume(returning: ProcessResult(
+                        status: process.terminationStatus,
+                        stdout: String(decoding: out.data, as: UTF8.self),
+                        stderr: String(decoding: errData, as: UTF8.self)))
+                }
+            }
+        } onCancel: {
+            handle.cancel()
+        }
+    }
+}
+
+/// Reports upload progress by watching how far curl/sftp has read through the local file.
+/// Neither tool prints usable progress when run without a terminal, but both read the file as they send it.
+final class ReadProgressMonitor: @unchecked Sendable {
+    private let inode: UInt64
+    private let size: Int64
+    private let report: @Sendable (Double) -> Void
+    private let queue = DispatchQueue(label: "shotty.upload-progress")
+    private var timer: DispatchSourceTimer?
+    private var last = 0.0
+
+    init(file: URL, report: @escaping @Sendable (Double) -> Void) {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+        inode = (attributes?[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        self.report = report
+    }
+
+    func start(pid: pid_t) {
+        guard inode != 0, size > 0 else { return }
+        queue.async {
+            let timer = DispatchSource.makeTimerSource(queue: self.queue)
+            timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+            timer.setEventHandler { [weak self] in self?.poll(pid: pid) }
+            self.timer = timer
+            timer.resume()
+        }
+    }
+
+    func stop() {
+        queue.sync {
+            timer?.cancel()
+            timer = nil
+        }
+    }
+
+    private func poll(pid: pid_t) {
+        guard let offset = Self.readOffset(pid: pid, inode: inode) else { return }
+        // Capped below 1: the last bytes still have to reach the server after the file is read.
+        let fraction = min(Double(offset) / Double(size), 0.99)
+        guard fraction > last else { return }
+        last = fraction
+        report(fraction)
+    }
+
+    /// Current read position of `pid` in the file with this inode, or nil if it has no such file open.
+    private static func readOffset(pid: pid_t, inode: UInt64) -> Int64? {
+        let bufferSize = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard bufferSize > 0 else { return nil }
+        var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(bufferSize) / MemoryLayout<proc_fdinfo>.stride)
+        let used = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, bufferSize)
+        guard used > 0 else { return nil }
+        let infoSize = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
+        for fd in fds.prefix(Int(used) / MemoryLayout<proc_fdinfo>.stride) where fd.proc_fdtype == UInt32(PROX_FDTYPE_VNODE) {
+            var info = vnode_fdinfowithpath()
+            guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, &info, infoSize) == infoSize else { continue }
+            if info.pvip.vip_vi.vi_stat.vst_ino == inode { return info.pfi.fi_offset }
+        }
+        return nil
     }
 }
