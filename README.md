@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/aldr-dev/Shotty/releases/latest"><img src="https://img.shields.io/github/v/release/aldr-dev/Shotty?include_prereleases&label=download" alt="Download"></a>
+  <a href="https://github.com/aldr-dev/Shotty/releases"><img src="https://img.shields.io/github/v/release/aldr-dev/Shotty?include_prereleases&label=download" alt="Download"></a>
   <img src="https://img.shields.io/badge/macOS-15%2B-blue" alt="macOS 15+">
   <img src="https://img.shields.io/badge/Swift-AppKit%20%2B%20SwiftUI-orange" alt="Swift">
 </p>
@@ -21,7 +21,7 @@
 
 ## Download
 
-**[Shotty.dmg](https://github.com/aldr-dev/Shotty/releases/latest/download/Shotty.dmg)** — universal build (Apple Silicon + Intel), macOS 15 or later.
+**[Shotty.dmg](https://github.com/aldr-dev/Shotty/releases/download/v1.0-beta1/Shotty.dmg)** — universal build (Apple Silicon + Intel), macOS 15 or later.
 
 Open the DMG and drag Shotty into Applications. All versions are on the [Releases](https://github.com/aldr-dev/Shotty/releases) page.
 
