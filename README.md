@@ -32,6 +32,7 @@ Open the DMG and drag Shotty into Applications. All versions are on the [Release
 - **Text recognition (OCR)** — select an area and the text goes straight to the clipboard
 - **Screen recording** — full screen or an area, system audio and microphone, pause, 5‑second countdown before start
 - **Upload** — FTP, FTPS and SFTP, several server profiles, passwords stored in Keychain, public link copied after upload
+- **Notifications** — upload progress with Cancel, "link copied", "saved" with Show in Finder, errors with Retry
 - Russian and English UI, light and dark theme, launch at login
 
 ## Screenshots
@@ -81,6 +82,7 @@ Pick full screen or an area, toggle system audio, microphone and cursor, then a 
 | Recognize text | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> |
 | Start / stop recording | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>R</kbd> |
 | Switch upload server | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>U</kbd> |
+| Open Shotty | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd> |
 
 All shortcuts can be changed in Settings → General.
 

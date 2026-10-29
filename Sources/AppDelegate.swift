@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var microphoneItem: NSMenuItem?
     private var darkModeItem: NSMenuItem?
     private var homeWindow: NSWindow?
+    private let homeToolbar = HomeToolbar()
     private var settingsWindow: NSWindow?
     private var editors: [EditorWindowController] = []
     private var isCapturing = false
@@ -116,15 +117,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 do {
                     let text = try await TextRecognizer.recognize(image)
                     if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        HUD.show(L("Текст не найден"), symbol: "text.viewfinder", isError: true)
+                        HUD.show(L("Текст не найден"), isError: true)
                     } else {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
-                        HUD.show(L("Текст скопирован в буфер обмена (%ld симв.)", text.count), symbol: "doc.on.clipboard.fill")
+                        HUD.show(L("Текст скопирован"), detail: L(characterCountKey(text.count), text.count))
                     }
                 } catch {
-                    HUD.show(L("Не удалось распознать текст: %@", error.localizedDescription),
-                             symbol: "exclamationmark.triangle.fill", isError: true)
+                    HUD.show(L("Не удалось распознать текст: %@", error.localizedDescription), isError: true)
                 }
             }
         }
@@ -164,8 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var microphone = settings.recordMicrophone
         if microphone, await !Self.microphoneAccess() {
             microphone = false
-            HUD.show(L("Нет доступа к микрофону — запись без него. Разрешите доступ в «Системных настройках» → «Конфиденциальность» → «Микрофон»."),
-                     symbol: "mic.slash.fill", isError: true)
+            HUD.show(L("Нет доступа к микрофону — запись без него. Разрешите доступ в «Системных настройках» → «Конфиденциальность» → «Микрофон»."), isError: true)
         }
         let options = RecordingOptions(selection: selection, systemAudio: settings.recordSystemAudio,
                                        microphone: microphone, showCursor: settings.showCursor)
@@ -179,13 +178,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case .success(let url):
                     self?.openRecordingResult(url)
                 case .failure(let error):
-                    HUD.show(L("Ошибка записи: %@", error.localizedDescription), symbol: "exclamationmark.triangle.fill", isError: true)
+                    HUD.show(L("Ошибка записи: %@", error.localizedDescription), isError: true)
                 }
             }
             RecordingControls.shared.show(for: selection)
         } catch {
-            HUD.show(L("Не удалось начать запись: %@", error.localizedDescription),
-                     symbol: "exclamationmark.triangle.fill", isError: true)
+            HUD.show(L("Не удалось начать запись: %@", error.localizedDescription), isError: true)
         }
     }
 
@@ -256,11 +254,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func switchServer(_ sender: Any?) {
         let settings = ServerSettings.shared
         guard let next = settings.selectNextServer() else {
-            HUD.show(L("Нет настроенных серверов"), symbol: "server.rack", isError: true)
+            HUD.show(L("Нет настроенных серверов"), isError: true)
             return
         }
         let count = settings.servers.filter(\.isConfigured).count
-        HUD.show(L("Загрузка на: %@", next.displayName) + (count > 1 ? L(Self.serverCountKey(count), count) : ""), symbol: "server.rack")
+        HUD.show(L("Загрузка на: %@", next.displayName) + (count > 1 ? L(Self.serverCountKey(count), count) : ""))
     }
 
     /// Russian plural form: 1 сервер, 2 сервера, 5 серверов (21 сервер, 22 сервера, 11 серверов).
@@ -343,37 +341,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showHome(_ sender: Any?) {
         if homeWindow == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 600, height: 420),
-                styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
-                backing: .buffered, defer: false)
-            window.titlebarAppearsTransparent = true
-            window.titleVisibility = .hidden
-            window.isMovableByWindowBackground = true
-            window.isReleasedWhenClosed = false
-            window.title = "Shotty"
-
-            let effect = NSVisualEffectView()
-            effect.material = .underWindowBackground
-            effect.blendingMode = .behindWindow
-            effect.state = .active
-            let hosting = NSHostingView(rootView: Localized {
-                HomeView(onAction: { [weak self] action in self?.perform(action) },
-                         onSettings: { [weak self] tab in self?.showSettings(tab: tab) })
-            })
-            // Window size is set explicitly; letting SwiftUI drive it crashes on appearance changes.
-            hosting.sizingOptions = []
-            hosting.translatesAutoresizingMaskIntoConstraints = false
-            effect.addSubview(hosting)
-            NSLayoutConstraint.activate([
-                hosting.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-                hosting.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-                hosting.topAnchor.constraint(equalTo: effect.topAnchor),
-                hosting.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
-            ])
-            window.contentView = effect
-            window.setContentSize(homeContentSize())
-            window.center()
+            let window = Self.makeHomeWindow(toolbarDelegate: homeToolbar,
+                                             onAction: { [weak self] action in self?.perform(action) },
+                                             onSettings: { [weak self] tab in self?.showSettings(tab: tab) })
             WindowButtons.keepColored(window)
             homeWindow = window
         }
@@ -381,9 +351,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bringToFront(homeWindow)
     }
 
-    private func homeContentSize() -> NSSize {
-        NSHostingController(rootView: HomeView(onAction: { _ in }, onSettings: { _ in }))
-            .sizeThatFits(in: NSSize(width: 600, height: 2000))
+    static func makeHomeWindow(toolbarDelegate: NSToolbarDelegate, onAction: @escaping (HotKeyAction) -> Void,
+                               onSettings: @escaping (SettingsTab) -> Void) -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: HomeView.width, height: HomeView.height),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered, defer: false)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.titlebarSeparatorStyle = .none
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        window.title = "Shotty"
+        // An empty unified toolbar makes the title bar taller, so the traffic lights line up
+        // with the language/theme buttons, which live in the toolbar to stay clickable.
+        let toolbar = NSToolbar(identifier: "home")
+        toolbar.delegate = toolbarDelegate
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+
+        let hosting = NSHostingView(rootView: Localized { HomeView(onAction: onAction, onSettings: onSettings) })
+        // Window size is set explicitly; letting SwiftUI drive it crashes on appearance changes.
+        hosting.sizingOptions = []
+        window.contentView = hosting
+        window.setContentSize(NSSize(width: HomeView.width, height: HomeView.height))
+        window.center()
+        return window
     }
 
     @objc func showSettings(_ sender: Any?) { showSettings(tab: .general) }
@@ -418,6 +412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .ocr: recognizeText(nil)
         case .record: toggleRecording(nil)
         case .switchServer: switchServer(nil)
+        case .openHome: showHome(nil)
         }
     }
 
@@ -454,6 +449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .ocr: selector = #selector(recognizeText(_:))
         case .record: selector = #selector(toggleRecording(_:))
         case .switchServer: selector = #selector(switchServer(_:))
+        case .openHome: selector = #selector(showHome(_:))
         }
         let item = menuItem(action.title, selector, "", [], symbol: symbol ? action.symbol : nil)
         actionMenuItems.append((action, item))
@@ -511,7 +507,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         languageItem.submenu = languageMenu
         menu.addItem(languageItem)
         menu.addItem(.separator())
-        menu.addItem(menuItem(L("Открыть Shotty"), #selector(showHome(_:)), "", [], symbol: "macwindow.on.rectangle"))
+        menu.addItem(actionItem(.openHome, symbol: true))
         menu.addItem(menuItem(L("Настройки…"), #selector(showSettings(_:)), ",", [.command], symbol: "gearshape"))
         menu.addItem(.separator())
         let quit = NSMenuItem(title: L("Завершить Shotty"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -536,10 +532,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyHotKeys()
         recorderStateChanged(ScreenRecorder.shared.state)
         settingsWindow?.title = L("Настройки Shotty")
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let home = self.homeWindow else { return }
-            home.setContentSize(self.homeContentSize())
-        }
     }
 
     private func menuItem(_ title: String, _ action: Selector, _ key: String, _ mods: NSEvent.ModifierFlags, symbol: String? = nil, target: AnyObject? = nil) -> NSMenuItem {
@@ -566,7 +558,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         addSubmenu(appMenu, title: "Shotty", to: main)
 
         let fileMenu = NSMenu(title: L("Файл"))
-        for action in HotKeyAction.allCases { fileMenu.addItem(actionItem(action, symbol: false)) }
+        for action in HotKeyAction.allCases where action != .openHome { fileMenu.addItem(actionItem(action, symbol: false)) }
         fileMenu.addItem(.separator())
         let save = NSMenuItem(title: L("Сохранить как…"), action: #selector(EditorWindowController.saveImage(_:)), keyEquivalent: "s")
         fileMenu.addItem(save)

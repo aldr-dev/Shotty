@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class CountdownModel: ObservableObject {
     @Published var remaining: Int
     init(remaining: Int) { self.remaining = remaining }
@@ -40,7 +41,7 @@ enum Countdown {
 
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             MainActor.assumeIsolated {
-                guard let model = (Self.panel?.contentView as? NSHostingView<CountdownView>)?.rootView.model else { return }
+                guard Self.panel === panel else { return }
                 if model.remaining > 1 {
                     model.remaining -= 1
                 } else {
@@ -85,6 +86,7 @@ struct CountdownView: View {
         .background(Circle().fill(.black.opacity(0.65)))
         .contentShape(Circle())
         .onTapGesture(perform: onCancel)
+        .handCursor()
         .frame(width: 220, height: 220)
     }
 }

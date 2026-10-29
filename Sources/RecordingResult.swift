@@ -100,10 +100,10 @@ final class RecordingResultWindowController: NSWindowController, NSWindowDelegat
             try FileManager.default.copyItem(at: model.fileURL, to: target)
             model.savedURL = target
             NSWorkspace.shared.activateFileViewerSelecting([target])
-            HUD.show(L("Сохранено: %@", target.lastPathComponent), symbol: "checkmark.circle.fill")
+            HUD.saved(target)
             discard()
         } catch {
-            model.showToast(Toast(message: error.localizedDescription, symbol: "exclamationmark.triangle.fill", isError: true))
+            model.showToast(Toast(message: error.localizedDescription, isError: true))
         }
     }
 
@@ -120,10 +120,10 @@ final class RecordingResultWindowController: NSWindowController, NSWindowDelegat
                 if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
                 try FileManager.default.copyItem(at: self.model.fileURL, to: url)
                 self.model.savedURL = url
-                HUD.show(L("Сохранено: %@", url.lastPathComponent), symbol: "checkmark.circle.fill")
+                HUD.saved(url)
                 self.discard()
             } catch {
-                self.model.showToast(Toast(message: error.localizedDescription, symbol: "exclamationmark.triangle.fill", isError: true))
+                self.model.showToast(Toast(message: error.localizedDescription, isError: true))
             }
         }
     }
@@ -135,26 +135,26 @@ final class RecordingResultWindowController: NSWindowController, NSWindowDelegat
             AppDelegate.shared?.showSettings(tab: .server)
             return
         }
-        let serverName = settings.active?.displayName ?? config.host
-        model.isUploading = true
-        Task { @MainActor in
-            do {
-                let result = try await Uploader.upload(file: model.fileURL, config: config)
-                model.isUploading = false
-                model.uploaded = true
-                if let link = result.link, settings.copyLinkAfterUpload {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(link, forType: .string)
-                    HUD.show(L("Загружено на «%@». Ссылка скопирована: %@", serverName, link), symbol: "checkmark.icloud.fill")
-                } else {
-                    HUD.show(L("Загружено на «%@»: %@", serverName, result.fileName), symbol: "checkmark.icloud.fill")
+        let fileURL = model.fileURL
+        // Same as the editor: hidden during the upload, closed on success, shown again otherwise.
+        let job = UploadJob(
+            fileName: model.fileName, serverName: settings.active?.displayName ?? config.host,
+            send: { progress in try await Uploader.upload(file: fileURL, config: try currentServerConfig(), progress: progress) },
+            onUpdate: { [weak self] state in
+                guard let self else { return }
+                self.model.isUploading = state == .uploading
+                switch state {
+                case .uploading:
+                    self.model.player.pause()
+                    self.window?.orderOut(nil)
+                case .succeeded:
+                    self.model.uploaded = true
+                    self.discard()
+                case .failed, .cancelled:
+                    self.window?.makeKeyAndOrderFront(nil)
                 }
-                discard()
-            } catch {
-                model.isUploading = false
-                model.showToast(Toast(message: error.localizedDescription, symbol: "exclamationmark.icloud.fill", isError: true))
-            }
-        }
+            })
+        job.start()
     }
 
     func discard() {
@@ -205,7 +205,7 @@ struct RecordingResultView: View {
                             Label(L("Сохранено: %@", (saved.path as NSString).abbreviatingWithTildeInPath), systemImage: "checkmark.circle.fill")
                                 .lineLimit(1).truncationMode(.middle)
                         }
-                        .buttonStyle(.link)
+                        .buttonStyle(.hand(.link))
                         .help(L("Показать в Finder"))
                     } else if model.uploaded {
                         Label(L("Загружено на сервер"), systemImage: "checkmark.icloud.fill").foregroundStyle(.green)
@@ -252,7 +252,6 @@ struct RecordingResultView: View {
             Spacer(minLength: 8)
             if servers.servers.filter(\.isConfigured).count > 1 {
                 ServerPicker(label: compact ? nil : servers.active?.displayName)
-                    .menuStyle(.borderlessButton)
                     .fixedSize()
             }
             Button {
@@ -278,7 +277,7 @@ struct RecordingResultView: View {
             } label: {
                 Label(L("Сохранить"), systemImage: "square.and.arrow.down").labelStyle(style(compact))
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.hand(.borderedProminent))
             .keyboardShortcut(.defaultAction)
             .disabled(model.isUploading)
             .help(L("Сохранить в %@", RecordingSettings.shared.folderDisplay))
