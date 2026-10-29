@@ -327,13 +327,13 @@ struct RecordingToolbar: View {
                     .frame(height: 38)
                     .background(Capsule().fill(model.canStart ? Color.red : Color.gray.opacity(0.5)))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hand(.plain))
             .disabled(!model.canStart)
             .help(model.canStart ? L("Начать запись (↩)") : L("Сначала выделите область"))
         }
         .padding(8)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.1)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.1)).allowsHitTesting(false))
         .fixedSize()
     }
 
@@ -356,10 +356,10 @@ struct ToolbarButton: View {
     let action: () -> Void
     @State private var hovering = false
 
-    static let activeGradient = LinearGradient(
-        colors: [Color(nsColor: .dynamic(light: 0x5B3CF5, dark: 0x9D8BFF)),
-                 Color(nsColor: .dynamic(light: 0xC2257D, dark: 0xFF7AC6))],
-        startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// The system blue in the light theme, white in the dark one.
+    static let activeColor = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .systemBlue
+    })
 
     var body: some View {
         Button(action: action) {
@@ -373,14 +373,14 @@ struct ToolbarButton: View {
                         .lineLimit(1)
                 }
             }
-            .foregroundStyle(selected ? AnyShapeStyle(Self.activeGradient)
+            .foregroundStyle(selected ? AnyShapeStyle(Self.activeColor)
                                       : AnyShapeStyle(Color.secondary.opacity(hovering ? 1 : 0.8)))
             .frame(minWidth: compact ? 34 : 62, minHeight: 38)
             .scaleEffect(hovering ? 1.06 : 1)
             .animation(.spring(duration: 0.2), value: hovering)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.hand(.plain))
         .onHover { hovering = $0 }
     }
 }

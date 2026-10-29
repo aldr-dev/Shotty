@@ -117,7 +117,128 @@ struct Localized<Content: View>: View {
 
     init(@ViewBuilder _ content: () -> Content) { self.content = content() }
 
-    var body: some View { content.id(preferences.language) }
+    var body: some View {
+        content.id(preferences.language)
+            .buttonStyle(.hand(.automatic))
+            .toggleStyle(HandCursorToggleStyle())
+    }
+}
+
+/// Keeps a button style's look and adds the pointing-hand cursor while the button is enabled.
+struct HandCursorButtonStyle<Base: PrimitiveButtonStyle>: PrimitiveButtonStyle {
+    let base: Base
+
+    func makeBody(configuration: Configuration) -> some View {
+        HandCursorButton(configuration: configuration, base: base)
+    }
+}
+
+private struct HandCursorButton<Base: PrimitiveButtonStyle>: View {
+    let configuration: PrimitiveButtonStyleConfiguration
+    let base: Base
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button(configuration).buttonStyle(base).handCursor(isEnabled)
+    }
+}
+
+extension PrimitiveButtonStyle {
+    static func hand<Base: PrimitiveButtonStyle>(_ base: Base) -> Self where Self == HandCursorButtonStyle<Base> {
+        HandCursorButtonStyle(base: base)
+    }
+}
+
+/// Switches and checkboxes keep their look and get the pointing-hand cursor.
+struct HandCursorToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Toggle(configuration).toggleStyle(.automatic).handCursor()
+    }
+}
+
+extension View {
+    /// Pointing-hand cursor for anything clickable: menus, color wells, tap targets, and buttons via `.hand(...)`.
+    func handCursor(_ enabled: Bool = true) -> some View {
+        modifier(HandCursorModifier(enabled: enabled))
+    }
+}
+
+/// `pointerStyle` only works in the key window of the active app. The floating panels
+/// (notifications, recording toolbar and controls) are never key, so there the cursor is driven by
+/// an AppKit tracking area that lets every click through. Both are needed: without `pointerStyle`
+/// SwiftUI sets the arrow on every mouse move in the key window, and the two make the cursor flicker.
+private struct HandCursorModifier: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .pointerStyle(enabled ? .link : nil)
+            .overlay {
+                if enabled { HandCursorArea().allowsHitTesting(false) }
+            }
+    }
+}
+
+private struct HandCursorArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> HandCursorView { HandCursorView() }
+    func updateNSView(_ view: HandCursorView, context: Context) {}
+}
+
+final class HandCursorView: NSView {
+    /// Areas the mouse is in; adjacent areas can report "entered" before the other's "exited".
+    private static var hovered = 0
+    private var inside = false
+    private var keeper: Timer?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero,
+                                       options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate,
+                                                 .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) { enter() }
+    // Also catches an "entered" that was missed because the view appeared under the mouse.
+    override func mouseMoved(with event: NSEvent) { enter() }
+    override func mouseEntered(with event: NSEvent) { enter() }
+
+    private func enter() {
+        if !inside {
+            inside = true
+            Self.hovered += 1
+            // SwiftUI resets the cursor to the arrow when it redraws, e.g. the recording timer every
+            // second, so keep it set while the mouse stays here.
+            keeper = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+                MainActor.assumeIsolated { NSCursor.pointingHand.set() }
+            }
+        }
+        NSCursor.pointingHand.set()
+        // The hosting view handles the same event and may reset the cursor to the arrow after us.
+        DispatchQueue.main.async { [weak self] in
+            if self?.inside == true { NSCursor.pointingHand.set() }
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) { leave() }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { leave() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    private func leave() {
+        guard inside else { return }
+        inside = false
+        keeper?.invalidate()
+        keeper = nil
+        Self.hovered -= 1
+        if Self.hovered == 0 { NSCursor.arrow.set() }
+    }
 }
 
 /// Translates a Russian UI string (the key) into the current interface language.
@@ -130,7 +251,29 @@ func L(_ key: String, _ args: CVarArg...) -> String {
     String(format: L(key), arguments: args)
 }
 
+/// Russian plural form: 1 символ, 2 символа, 5 символов (21 символ, 22 символа, 11 символов).
+func characterCountKey(_ n: Int) -> String {
+    let mod10 = n % 10, mod100 = n % 100
+    if mod10 == 1 && mod100 != 11 { return "%ld символ" }
+    if (2...4).contains(mod10) && !(12...14).contains(mod100) { return "%ld символа" }
+    return "%ld символов"
+}
+
 private let englishStrings: [String: String] = [
+    // Home window & notifications
+    "Снимки, разметка и загрузка на свой сервер": "Screenshots, markup and upload to your own server",
+    "+ сочетание": "+ shortcut",
+    "Назначить сочетание клавиш": "Assign a keyboard shortcut",
+    "Горячие клавиши…": "Keyboard Shortcuts…",
+    "Настройки сервера": "Server settings",
+    "Загрузка на %@…": "Uploading to %@…",
+    "Ссылка скопирована": "Link copied",
+    "Сохранено": "Saved",
+    "Не удалось загрузить": "Upload failed",
+    "Текст скопирован": "Text copied",
+    "%ld символ": "%ld character",
+    "%ld символа": "%ld characters",
+    "%ld символов": "%ld characters",
     // Interface & theme
     "Интерфейс": "Interface",
     "Запускать при входе в систему": "Launch at login",

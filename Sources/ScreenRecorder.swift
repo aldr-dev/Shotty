@@ -115,8 +115,7 @@ final class ScreenRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStre
                 state = .recording
             } catch {
                 busy = false
-                HUD.show(L("Не удалось продолжить запись: %@", error.localizedDescription),
-                         symbol: "exclamationmark.triangle.fill", isError: true)
+                HUD.show(L("Не удалось продолжить запись: %@", error.localizedDescription), isError: true)
                 await finish(error: nil)
             }
         }
