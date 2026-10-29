@@ -1,5 +1,6 @@
-# Build output
-build/
+# Build output (only the ready-to-install DMG is tracked)
+build/*
+!build/Shotty.dmg
 
 # macOS
 .DS_Store
