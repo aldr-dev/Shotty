@@ -46,7 +46,7 @@ struct EmojiPickerView: View {
                 .frame(maxWidth: .infinity, minHeight: 22)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.hand(.plain))
         .help(title)
     }
 

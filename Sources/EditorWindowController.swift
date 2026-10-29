@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 
 struct Toast: Equatable {
     var message: String
-    var symbol: String
     var isError = false
 }
 
@@ -166,7 +165,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         pb.clearContents()
         pb.setData(png, forType: .png)
         if let tiff = canvas.renderedImage().tiffRepresentation { pb.setData(tiff, forType: .tiff) }
-        model.showToast(Toast(message: L("Скопировано в буфер обмена"), symbol: "doc.on.doc.fill"))
+        model.showToast(Toast(message: L("Скопировано в буфер обмена")))
     }
 
     @objc func saveImage(_ sender: Any?) {
@@ -183,10 +182,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             guard let data = isJPEG ? self.canvas.jpegData() : self.canvas.pngData() else { return }
             do {
                 try data.write(to: url)
-                HUD.show(L("Сохранено: %@", url.lastPathComponent), symbol: "checkmark.circle.fill")
+                HUD.saved(url)
                 self.close()
             } catch {
-                self.model.showToast(Toast(message: error.localizedDescription, symbol: "exclamationmark.triangle.fill", isError: true))
+                self.model.showToast(Toast(message: error.localizedDescription, isError: true))
             }
         }
     }
@@ -208,25 +207,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             return
         }
         guard let data = canvas.pngData() else { return }
-        let serverName = ServerSettings.shared.active?.displayName ?? config.host
-        model.isUploading = true
-        Task { @MainActor in
-            do {
-                let result = try await Uploader.upload(data: data, fileExtension: "png", config: config)
-                self.model.isUploading = false
-                if let link = result.link, ServerSettings.shared.copyLinkAfterUpload {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(link, forType: .string)
-                    HUD.show(L("Загружено на «%@». Ссылка скопирована: %@", serverName, link), symbol: "checkmark.icloud.fill")
-                } else {
-                    HUD.show(L("Загружено на «%@»: %@", serverName, result.fileName), symbol: "checkmark.icloud.fill")
+        // The window hides while the notification shows progress; it closes on success
+        // and comes back on failure or cancel, so the screenshot is never lost.
+        let job = UploadJob(
+            fileName: pngFileName, serverName: ServerSettings.shared.active?.displayName ?? config.host,
+            send: { progress in
+                try await Uploader.upload(data: data, fileExtension: "png", config: try currentServerConfig(), progress: progress)
+            },
+            onUpdate: { [weak self] state in
+                guard let self else { return }
+                self.model.isUploading = state == .uploading
+                switch state {
+                case .uploading: self.window?.orderOut(nil)
+                case .succeeded: self.close()
+                case .failed, .cancelled: self.window?.makeKeyAndOrderFront(nil)
                 }
-                self.close()
-            } catch {
-                self.model.isUploading = false
-                self.model.showToast(Toast(message: error.localizedDescription, symbol: "exclamationmark.icloud.fill", isError: true))
-            }
-        }
+            })
+        job.start()
     }
 }
 
@@ -293,6 +290,7 @@ struct CompactStylePicker: View {
                 Image(nsImage: NSImage.swatch(model.color, size: 18))
             }
             .menuStyle(.borderlessButton)
+            .handCursor()
             .menuIndicator(.visible)
             .fixedSize()
             .help(L("Цвет"))
@@ -302,6 +300,7 @@ struct CompactStylePicker: View {
                 set: { model.color = NSColor($0) }))
             .labelsHidden()
             .help(L("Другой цвет"))
+            .handCursor()
 
             Menu {
                 ForEach([2, 4, 6, 8, 12, 16], id: \.self) { width in
@@ -311,6 +310,7 @@ struct CompactStylePicker: View {
                 Label("\(Int(model.lineWidth))", systemImage: "lineweight")
             }
             .menuStyle(.borderlessButton)
+            .handCursor()
             .fixedSize()
             .help(L("Толщина линий и размер текста"))
         }
@@ -343,7 +343,7 @@ struct ToolPicker: View {
                                 .fill(selected ? Color.accentColor : Color.clear))
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hand(.plain))
                 .help(tool.title)
                 .popover(isPresented: tool == .emoji ? $model.showEmojiPicker : .constant(false), arrowEdge: .bottom) {
                     EmojiPickerView(model: model)
@@ -374,13 +374,14 @@ struct StylePicker: View {
                             .overlay(Circle().strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hand(.plain))
                 }
                 ColorPicker("", selection: Binding(
                     get: { Color(nsColor: model.color) },
                     set: { model.color = NSColor($0) }))
                 .labelsHidden()
                 .help(L("Другой цвет"))
+                .handCursor()
             }
             Divider().frame(height: 20)
             HStack(spacing: 6) {
@@ -388,6 +389,7 @@ struct StylePicker: View {
                 Slider(value: $model.lineWidth, in: 2...16, step: 1)
                     .frame(width: 90)
                     .controlSize(.small)
+                    .handCursor()
                 Text("\(Int(model.lineWidth))")
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(.secondary)
@@ -408,7 +410,7 @@ struct HistoryButtons: View {
             Button { model.canvas?.redo(nil) } label: { Image(systemName: "arrow.uturn.forward") }
                 .disabled(!model.canRedo).help(L("Повторить (⇧⌘Z)"))
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.hand(.borderless))
         .font(.system(size: 14, weight: .medium))
         .padding(.horizontal, 4)
     }
@@ -422,7 +424,6 @@ struct ShareButtons: View {
         HStack(spacing: 8) {
             if servers.servers.filter(\.isConfigured).count > 1 {
                 ServerPicker(label: servers.active?.displayName)
-                    .menuStyle(.borderlessButton)
                     .fixedSize()
                     .font(.system(size: 12))
             }
@@ -443,7 +444,7 @@ struct ShareButtons: View {
                     Text(model.isUploading ? L("Загрузка…") : L("Загрузить"))
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.hand(.borderedProminent))
             .disabled(model.isUploading)
             .help(L("Загрузить на FTP/SFTP (⌘U)"))
         }
@@ -472,7 +473,7 @@ struct StatusBar: View {
             Button(L("Вписать")) { model.controller?.zoomToFit() }
             Button("100%") { model.controller?.setZoom(1) }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.hand(.borderless))
         .font(.system(size: 11))
         .padding(.horizontal, 14)
         .frame(height: 30)
@@ -484,21 +485,8 @@ struct ToastView: View {
     let toast: Toast
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: toast.symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(toast.isError ? Color.red : Color.green)
-            Text(toast.message)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(3)
-                .textSelection(.enabled)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .frame(maxWidth: 560)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        PillNotice(title: toast.message, isError: toast.isError)
+            .textSelection(.enabled)
     }
 }
 

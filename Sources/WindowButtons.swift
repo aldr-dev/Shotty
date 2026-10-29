@@ -33,7 +33,10 @@ private final class TrafficLightGroup: NSView {
             addSubview(light)
             lights.append(light)
             // Windows disable their close button while uploading — mirror that.
-            observations.append(original.observe(\.isEnabled) { [weak light] _, _ in light?.needsDisplay = true })
+            observations.append(original.observe(\.isEnabled) { [weak light] _, _ in
+                light?.needsDisplay = true
+                light.map { $0.window?.invalidateCursorRects(for: $0) }
+            })
         }
     }
 
@@ -69,6 +72,10 @@ private final class TrafficLight: NSView {
     private var isEnabled: Bool { original?.isEnabled ?? false }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func resetCursorRects() {
+        if isEnabled { addCursorRect(bounds, cursor: .pointingHand) }
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }

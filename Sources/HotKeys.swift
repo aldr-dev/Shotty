@@ -36,7 +36,7 @@ struct HotKey: Codable, Equatable {
 }
 
 enum HotKeyAction: String, CaseIterable, Identifiable {
-    case area, window, fullScreen, ocr, record, switchServer
+    case area, window, fullScreen, ocr, record, switchServer, openHome
 
     var id: String { rawValue }
 
@@ -50,6 +50,7 @@ enum HotKeyAction: String, CaseIterable, Identifiable {
         case .ocr: L("Распознать текст")
         case .record: L("Запись видео (старт/стоп)")
         case .switchServer: L("Сменить сервер загрузки")
+        case .openHome: L("Открыть Shotty")
         }
     }
 
@@ -61,6 +62,7 @@ enum HotKeyAction: String, CaseIterable, Identifiable {
         case .ocr: "text.viewfinder"
         case .record: "record.circle"
         case .switchServer: "arrow.triangle.2.circlepath"
+        case .openHome: "macwindow.on.rectangle"
         }
     }
 
@@ -74,6 +76,7 @@ enum HotKeyAction: String, CaseIterable, Identifiable {
         case .ocr: return HotKey(keyCode: UInt32(kVK_ANSI_T), modifiers: optMods)
         case .record: return HotKey(keyCode: UInt32(kVK_ANSI_R), modifiers: optMods)
         case .switchServer: return HotKey(keyCode: UInt32(kVK_ANSI_U), modifiers: optMods)
+        case .openHome: return HotKey(keyCode: UInt32(kVK_ANSI_O), modifiers: optMods)
         }
     }
 
@@ -85,6 +88,7 @@ enum HotKeyAction: String, CaseIterable, Identifiable {
         case .ocr: 4
         case .record: 5
         case .switchServer: 6
+        case .openHome: 7
         }
     }
 }
@@ -275,12 +279,14 @@ struct GeneralSettingsView: View {
                     Label(L("Язык"), systemImage: "globe")
                 }
                 .pickerStyle(.segmented)
+                .handCursor()
                 Picker(selection: $preferences.theme) {
                     ForEach(AppTheme.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
                 } label: {
                     Label(L("Оформление"), systemImage: "paintpalette")
                 }
                 .pickerStyle(.segmented)
+                .handCursor()
             } header: {
                 Label(L("Интерфейс"), systemImage: "macwindow")
             }
@@ -380,7 +386,7 @@ struct HotKeyRecorder: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.hand(.borderless))
                 .foregroundStyle(.secondary)
                 .help(L("Отключить сочетание"))
                 .disabled(recording || hotKeys.hotKey(for: action) == nil)

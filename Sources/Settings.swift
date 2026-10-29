@@ -233,7 +233,7 @@ struct ServerSettingsView: View {
                               isActive: server.id == settings.active?.id,
                               isSelected: server.id == selectedID,
                               onSelect: { selectedID = server.id },
-                              onActivate: { settings.activeID = server.id })
+                              onActivate: { settings.activeID = server.id; selectedID = server.id })
                 }
                 HStack(spacing: 6) {
                     Button {
@@ -278,6 +278,8 @@ struct ServerSettingsView: View {
         .formStyle(.grouped)
         .frame(minWidth: 520)
         .onAppear { if selectedID == nil { selectedID = settings.active?.id } }
+        // Switching the upload server anywhere (hotkey, menu) also highlights it here.
+        .onChange(of: settings.active?.id) { _, id in if let id { selectedID = id } }
     }
 
     private func profileBinding(_ id: UUID, fallback: ServerProfile) -> Binding<ServerProfile> {
@@ -303,7 +305,7 @@ private struct ServerRow: View {
                     .font(.system(size: 16))
                     .foregroundStyle(isActive ? Color.accentColor : .secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hand(.plain))
             .help(isActive ? L("Сюда загружаются снимки") : L("Загружать снимки на этот сервер"))
             .disabled(!server.isConfigured)
 
@@ -324,7 +326,10 @@ private struct ServerRow: View {
         .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
             .fill(isSelected ? Color.accentColor.opacity(0.12) : .clear))
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        // The whole row picks the upload server, like the radio button; one that isn't set up yet
+        // can only be opened for editing.
+        .onTapGesture { server.isConfigured ? onActivate() : onSelect() }
+        .handCursor()
     }
 }
 
@@ -341,6 +346,7 @@ private struct ServerEditor: View {
                 ForEach(TransferProtocol.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
+            .handCursor()
 
             TextField(L("Сервер"), text: $profile.host, prompt: Text("ftp.example.com"))
             TextField(L("Порт"), text: $profile.port, prompt: Text("\(profile.proto.defaultPort)"))
@@ -445,15 +451,28 @@ struct SettingsRootView: View {
     @ObservedObject private var navigation = SettingsNavigation.shared
 
     var body: some View {
-        TabView(selection: $navigation.tab) {
-            GeneralSettingsView()
-                .tabItem { Label(L("Основные"), systemImage: "keyboard") }
-                .tag(SettingsTab.general)
-            ServerSettingsView()
-                .tabItem { Label(L("Серверы"), systemImage: "server.rack") }
-                .tag(SettingsTab.server)
+        // A segmented control instead of TabView: the native tabs can't show the pointing-hand cursor.
+        VStack(spacing: 0) {
+            Picker("", selection: $navigation.tab) {
+                Label(L("Основные"), systemImage: "keyboard").tag(SettingsTab.general)
+                Label(L("Серверы"), systemImage: "server.rack").tag(SettingsTab.server)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .handCursor()
+            .padding(.vertical, 10)
+            Divider()
+            Group {
+                switch navigation.tab {
+                case .general: GeneralSettingsView()
+                case .server: ServerSettingsView()
+                }
+            }
+            // Same background as the tab bar above, so the window reads as one surface.
+            .scrollContentBackground(.hidden)
         }
-        .padding(.top, 8)
+        .background(Color(nsColor: .windowBackgroundColor))
         .frame(width: 580, height: 720)
     }
 }
