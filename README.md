@@ -21,7 +21,7 @@
 
 ## Download
 
-**[Shotty.dmg](https://github.com/aldr-dev/Shotty/releases/download/v1.1-beta/Shotty.dmg)** — universal build (Apple Silicon + Intel), macOS 15 or later.
+**[Shotty.dmg](https://github.com/aldr-dev/Shotty/releases/download/v1.1.1-beta/Shotty.dmg)** — universal build (Apple Silicon + Intel), macOS 15 or later.
 
 Open the DMG and drag Shotty into Applications. All versions are on the [Releases](https://github.com/aldr-dev/Shotty/releases) page.
 
