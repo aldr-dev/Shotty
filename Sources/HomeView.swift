@@ -170,12 +170,74 @@ struct HomeTitleButtons: View {
     }
 }
 
+/// Reports whether the hosting window is visible: on screen, not minimized and not fully covered.
+private struct WindowVisibilityReader: NSViewRepresentable {
+    let onChange: (Bool) -> Void
+
+    func makeNSView(context: Context) -> ReaderView { ReaderView(onChange: onChange) }
+    func updateNSView(_ view: ReaderView, context: Context) { view.onChange = onChange }
+
+    final class ReaderView: NSView {
+        var onChange: (Bool) -> Void
+        private var observer: NSObjectProtocol?
+        private var visible: Bool?
+
+        init(onChange: @escaping (Bool) -> Void) {
+            self.onChange = onChange
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observer.map(NotificationCenter.default.removeObserver)
+            observer = nil
+            guard let window else { return report(false) }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.reportWindowState() }
+            }
+            reportWindowState()
+        }
+
+        private func reportWindowState() {
+            report(window?.occlusionState.contains(.visible) ?? false)
+        }
+
+        private func report(_ value: Bool) {
+            guard value != visible else { return }
+            visible = value
+            // Called during view updates; changing SwiftUI state there is not allowed.
+            DispatchQueue.main.async { [onChange] in onChange(value) }
+        }
+    }
+}
+
+/// Live server: a ring keeps spreading out from the dot.
+private struct PulseRing: View {
+    @State private var pulse = false
+
+    var body: some View {
+        Circle()
+            .fill(Glass.hex(0x22C55E))
+            .scaleEffect(pulse ? 2.2 : 0.8)
+            .opacity(pulse ? 0 : 0.45)
+            .onAppear {
+                withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
+            }
+    }
+}
+
 private struct ServerBar: View {
     @Binding var showServers: Bool
     let onSettings: () -> Void
     @ObservedObject private var settings = ServerSettings.shared
     @Environment(\.colorScheme) private var scheme
-    @State private var pulse = false
+    @State private var windowVisible = false
 
     var body: some View {
         HStack(spacing: 11) {
@@ -185,18 +247,14 @@ private struct ServerBar: View {
                 .padding(3.5)
                 .background(Circle().fill((settings.isConfigured ? Glass.hex(0x22C55E) : Color.gray).opacity(0.22)))
                 .background {
-                    // Live server: a ring keeps spreading out from the dot.
-                    if settings.isConfigured {
-                        Circle()
-                            .fill(Glass.hex(0x22C55E))
-                            .scaleEffect(pulse ? 2.2 : 0.8)
-                            .opacity(pulse ? 0 : 0.45)
+                    // Only while the window is on screen: the window stays alive when closed, and a
+                    // running animation would keep redrawing it every frame.
+                    if settings.isConfigured && windowVisible {
+                        PulseRing()
                     }
                 }
                 .shadow(color: settings.isConfigured ? Glass.hex(0x22C55E, 0.6) : .clear, radius: 3)
-                .onAppear {
-                    withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
-                }
+                .background(WindowVisibilityReader { windowVisible = $0 })
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(settings.isConfigured ? (settings.active?.displayName ?? "") : L("Сервер не настроен"))
