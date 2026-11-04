@@ -20,6 +20,8 @@ struct ServerConfig {
     var keyPath: String
     var activeMode: Bool
     var allowInsecureTLS: Bool
+    /// Octal mode such as `0644` applied to the uploaded file; nil leaves the server's default.
+    var filePermissions: String?
 
     func publicLink(for fileName: String) -> String? {
         let base = publicURL.trimmingCharacters(in: .whitespaces)
@@ -41,6 +43,7 @@ struct ServerProfile: Codable, Identifiable, Equatable {
     var keyPath = ""
     var activeMode = false
     var allowInsecureTLS = false
+    var filePermissions = ""
 
     var cleanHost: String {
         var h = host.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -60,6 +63,33 @@ struct ServerProfile: Codable, Identifiable, Equatable {
     var summary: String {
         "\(proto.rawValue) · " + (cleanHost.isEmpty ? L("адрес не указан") : cleanHost)
             + (remotePath.isEmpty ? "" : " · \(remotePath)")
+    }
+
+    /// The permissions field as an octal mode (`644`, `0644`), or nil when empty or malformed.
+    var validFilePermissions: String? {
+        let mode = filePermissions.trimmingCharacters(in: .whitespaces)
+        guard (3...4).contains(mode.count), mode.allSatisfy({ ("0"..."7").contains($0) }) else { return nil }
+        return mode
+    }
+}
+
+extension ServerProfile {
+    // Profiles saved by older versions lack the newer keys; those keep their defaults.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init()
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? id
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? name
+        proto = try c.decodeIfPresent(TransferProtocol.self, forKey: .proto) ?? proto
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? host
+        port = try c.decodeIfPresent(String.self, forKey: .port) ?? port
+        username = try c.decodeIfPresent(String.self, forKey: .username) ?? username
+        remotePath = try c.decodeIfPresent(String.self, forKey: .remotePath) ?? remotePath
+        publicURL = try c.decodeIfPresent(String.self, forKey: .publicURL) ?? publicURL
+        keyPath = try c.decodeIfPresent(String.self, forKey: .keyPath) ?? keyPath
+        activeMode = try c.decodeIfPresent(Bool.self, forKey: .activeMode) ?? activeMode
+        allowInsecureTLS = try c.decodeIfPresent(Bool.self, forKey: .allowInsecureTLS) ?? allowInsecureTLS
+        filePermissions = try c.decodeIfPresent(String.self, forKey: .filePermissions) ?? filePermissions
     }
 }
 
@@ -148,7 +178,8 @@ final class ServerSettings: ObservableObject {
             publicURL: p.publicURL,
             keyPath: (p.keyPath.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath,
             activeMode: p.activeMode,
-            allowInsecureTLS: p.allowInsecureTLS)
+            allowInsecureTLS: p.allowInsecureTLS,
+            filePermissions: p.validFilePermissions)
     }
 
     /// Makes the next configured server active (wrapping around) and returns it.
@@ -219,6 +250,7 @@ enum Keychain {
     }
 }
 
+
 // MARK: - Settings UI
 
 struct ServerSettingsView: View {
@@ -226,60 +258,54 @@ struct ServerSettingsView: View {
     @State private var selectedID: UUID?
 
     var body: some View {
-        Form {
-            Section {
-                ForEach(settings.servers) { server in
-                    ServerRow(server: server,
-                              isActive: server.id == settings.active?.id,
-                              isSelected: server.id == selectedID,
-                              onSelect: { selectedID = server.id },
-                              onActivate: { settings.activeID = server.id; selectedID = server.id })
-                }
-                HStack(spacing: 6) {
-                    Button {
-                        selectedID = settings.addServer()
-                    } label: {
-                        Image(systemName: "plus").frame(width: 14, height: 14)
+        VStack(alignment: .leading, spacing: 12) {
+            GlassSection(L("Серверы"), leading: 6, trailing: 6) {
+                VStack(spacing: 4) {
+                    ForEach(settings.servers) { server in
+                        ServerRow(server: server,
+                                  isActive: server.id == settings.active?.id,
+                                  isSelected: server.id == selectedID,
+                                  onSelect: { selectedID = server.id },
+                                  onActivate: { settings.activeID = server.id; selectedID = server.id })
                     }
-                    .help(L("Добавить сервер"))
-                    Button {
-                        guard let id = selectedID else { return }
-                        let ids = settings.servers.map(\.id)
-                        let index = ids.firstIndex(of: id) ?? 0
-                        let remaining = ids.filter { $0 != id }
-                        selectedID = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)]
-                        settings.removeServer(id)
-                        if selectedID == nil { selectedID = settings.servers.first?.id }
-                    } label: {
-                        Image(systemName: "minus").frame(width: 14, height: 14)
+                    HStack(spacing: 6) {
+                        GlassIconButton(symbol: "plus", help: L("Добавить сервер")) {
+                            selectedID = settings.addServer()
+                        }
+                        GlassIconButton(symbol: "minus", help: L("Удалить выбранный сервер"), action: removeSelected)
+                            .disabled(selectedID == nil || (settings.servers.count == 1 && settings.servers.first?.isConfigured == false))
+                        Spacer()
                     }
-                    .help(L("Удалить выбранный сервер"))
-                    .disabled(selectedID == nil || (settings.servers.count == 1 && settings.servers.first?.isConfigured == false))
-                    Spacer()
+                    .padding(.horizontal, 4)
+                    .padding(.top, 6)
+                    .padding(.bottom, 2)
                 }
-            } header: {
-                Label(L("Серверы"), systemImage: "server.rack")
+                .padding(.vertical, 6)
             } footer: {
                 Text(L("Отметьте кружком сервер, на который будут загружаться снимки. Переключать серверы можно горячей клавишей (см. «Основные») или из меню Shotty в строке меню."))
-                    .font(.caption).foregroundStyle(.secondary)
             }
 
             if let id = selectedID, let current = settings.servers.first(where: { $0.id == id }) {
                 ServerEditor(profile: profileBinding(id, fallback: current),
                              password: Binding(get: { settings.password(for: id) },
-                                               set: { settings.setPassword($0, for: id) }))
+                                               set: { settings.setPassword($0, for: id) }),
+                             copyLink: $settings.copyLinkAfterUpload)
                     .id(id)
             }
-
-            Section {
-                Toggle(L("Копировать ссылку после загрузки"), isOn: $settings.copyLinkAfterUpload)
-            }
         }
-        .formStyle(.grouped)
-        .frame(minWidth: 520)
         .onAppear { if selectedID == nil { selectedID = settings.active?.id } }
         // Switching the upload server anywhere (hotkey, menu) also highlights it here.
         .onChange(of: settings.active?.id) { _, id in if let id { selectedID = id } }
+    }
+
+    private func removeSelected() {
+        guard let id = selectedID else { return }
+        let ids = settings.servers.map(\.id)
+        let index = ids.firstIndex(of: id) ?? 0
+        let remaining = ids.filter { $0 != id }
+        selectedID = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)]
+        settings.removeServer(id)
+        if selectedID == nil { selectedID = settings.servers.first?.id }
     }
 
     private func profileBinding(_ id: UUID, fallback: ServerProfile) -> Binding<ServerProfile> {
@@ -297,110 +323,185 @@ private struct ServerRow: View {
     let isSelected: Bool
     let onSelect: () -> Void
     let onActivate: () -> Void
+    @Environment(\.colorScheme) private var scheme
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            Button(action: onActivate) {
-                Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 16))
-                    .foregroundStyle(isActive ? Color.accentColor : .secondary)
-            }
-            .buttonStyle(.hand(.plain))
-            .help(isActive ? L("Сюда загружаются снимки") : L("Загружать снимки на этот сервер"))
-            .disabled(!server.isConfigured)
+        let dark = scheme == .dark
+        HStack(spacing: 12) {
+            Button(action: onActivate) { radio }
+                .buttonStyle(.hand(.plain))
+                .help(isActive ? L("Сюда загружаются снимки") : L("Загружать снимки на этот сервер"))
+                .disabled(!server.isConfigured)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(server.displayName).font(.system(size: 13, weight: .semibold))
-                Text(server.summary).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(server.displayName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SettingsStyle.primary(scheme))
+                Text(server.summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(isSelected ? (dark ? Glass.hex(0xC4CBE0) : Glass.hex(0x2C3346)) : SettingsStyle.secondary(scheme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            Spacer()
+            Spacer(minLength: 0)
             if isActive {
                 Text(L("для загрузки"))
                     .font(.system(size: 10, weight: .semibold))
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.15)))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(dark ? Glass.hex(0xCFE0FF) : .white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(dark ? Glass.hex(0x3A6BFF, 0.3) : Glass.hex(0x1F4F9A)))
+                    .fixedSize()
             }
         }
-        .padding(.vertical, 4).padding(.horizontal, 6)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(isSelected ? Color.accentColor.opacity(0.12) : .clear))
+        .padding(.horizontal, 10)
+        .frame(height: 48)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            if isSelected {
+                shape.fill(dark ? Glass.hex(0x3A6BFF, 0.16) : Glass.hex(0x1F4F9A, 0.1))
+                    .overlay(shape.strokeBorder(dark ? Glass.hex(0x5B8CFF, 0.45) : Glass.hex(0x1F4F9A, 0.25), lineWidth: 0.5))
+            } else if hovering {
+                shape.fill(dark ? Color.white.opacity(0.06) : Color.white.opacity(0.5))
+            }
+        }
         .contentShape(Rectangle())
         // The whole row picks the upload server, like the radio button; one that isn't set up yet
         // can only be opened for editing.
         .onTapGesture { server.isConfigured ? onActivate() : onSelect() }
+        .onHover { hovering = $0 }
         .handCursor()
+    }
+
+    private var radio: some View {
+        let dark = scheme == .dark
+        return ZStack {
+            if isActive {
+                Circle().fill(SettingsStyle.accent(scheme))
+                    .shadow(color: dark ? Glass.hex(0x3A6BFF, 0.6) : Glass.hex(0x1F4F9A, 0.35),
+                            radius: dark ? 5 : 3, y: dark ? 0 : 2)
+                Image(systemName: "checkmark").font(.system(size: 8.5, weight: .heavy)).foregroundStyle(.white)
+            } else {
+                Circle().fill(dark ? Color.clear : Color.white.opacity(0.6))
+                Circle().strokeBorder(dark ? Color.white.opacity(0.35) : Glass.hex(0x102A54, 0.35), lineWidth: 1.5)
+            }
+        }
+        .frame(width: 18, height: 18)
+        .contentShape(Circle())
     }
 }
 
 private struct ServerEditor: View {
     @Binding var profile: ServerProfile
     @Binding var password: String
+    @Binding var copyLink: Bool
     @State private var testing = false
     @State private var testResult: (ok: Bool, message: String)?
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        Section {
-            TextField(L("Название"), text: $profile.name, prompt: Text(L("например, Рабочий")))
-            Picker(L("Протокол"), selection: $profile.proto) {
-                ForEach(TransferProtocol.allCases) { Text($0.rawValue).tag($0) }
+        GlassSection(L("Подключение"), detail: profile.displayName) {
+            GlassRow(title: L("Название")) {
+                GlassField(placeholder: L("например, Рабочий"), text: $profile.name)
             }
-            .pickerStyle(.segmented)
-            .handCursor()
-
-            TextField(L("Сервер"), text: $profile.host, prompt: Text("ftp.example.com"))
-            TextField(L("Порт"), text: $profile.port, prompt: Text("\(profile.proto.defaultPort)"))
-            TextField(L("Пользователь"), text: $profile.username, prompt: Text(profile.proto == .sftp ? "user" : "anonymous"))
-            SecureField(L("Пароль"), text: $password, prompt: Text(L("хранится в Связке ключей")))
-
+            GlassRow(title: L("Протокол")) {
+                GlassSegmented(options: TransferProtocol.allCases, selection: $profile.proto,
+                               title: \.rawValue, itemWidth: 70)
+            }
+            GlassRow(title: L("Сервер")) {
+                GlassField(placeholder: "ftp.example.com", text: $profile.host)
+            }
+            GlassRow(title: L("Порт")) {
+                GlassField(placeholder: "\(profile.proto.defaultPort)", text: $profile.port, width: 90)
+            }
+            GlassRow(title: L("Пользователь")) {
+                GlassField(placeholder: profile.proto == .sftp ? "user" : "anonymous", text: $profile.username)
+            }
+            GlassRow(title: L("Пароль")) {
+                GlassField(placeholder: L("хранится в Связке ключей"), text: $password, secure: true)
+            }
             if profile.proto == .sftp {
-                HStack {
-                    TextField(L("SSH-ключ"), text: $profile.keyPath, prompt: Text(L("необязательно, ~/.ssh/id_ed25519")))
-                    Button(L("Выбрать…"), action: chooseKey)
+                GlassRow(title: L("SSH-ключ"), showsDivider: false) {
+                    HStack(spacing: 8) {
+                        GlassField(placeholder: L("необязательно, ~/.ssh/id_ed25519"), text: $profile.keyPath, width: 150)
+                        GlassButton(title: L("Выбрать…"), action: chooseKey)
+                    }
                 }
             } else {
-                Toggle(L("Активный режим (PORT)"), isOn: $profile.activeMode)
+                GlassRow(title: L("Активный режим"), detail: "PORT", showsDivider: profile.proto == .ftps) {
+                    GlassSwitch(isOn: $profile.activeMode)
+                }
             }
             if profile.proto == .ftps {
-                Toggle(L("Не проверять сертификат сервера"), isOn: $profile.allowInsecureTLS)
-            }
-        } header: {
-            Label(L("Подключение — %@", profile.displayName), systemImage: "network")
-        } footer: {
-            Text(protocolHint).font(.caption).foregroundStyle(.secondary)
-        }
-
-        Section {
-            TextField(L("Папка на сервере"), text: $profile.remotePath, prompt: Text("uploads/screens"))
-            TextField(L("Публичный URL папки"), text: $profile.publicURL, prompt: Text("https://example.com/screens"))
-        } header: {
-            Label(L("Размещение файлов"), systemImage: "folder")
-        } footer: {
-            Text(L("Если папки нет — она будет создана. Публичный URL нужен, чтобы после загрузки получить готовую ссылку на картинку."))
-                .font(.caption).foregroundStyle(.secondary)
-        }
-
-        Section {
-            HStack(spacing: 12) {
-                Button {
-                    runTest()
-                } label: {
-                    Label(L("Проверить подключение"), systemImage: "bolt.horizontal.circle")
+                GlassRow(title: L("Не проверять сертификат сервера"), showsDivider: false) {
+                    GlassSwitch(isOn: $profile.allowInsecureTLS)
                 }
-                .disabled(testing || !profile.isConfigured)
+            }
+        } footer: {
+            Text(protocolHint)
+        }
 
-                if testing {
-                    ProgressView().controlSize(.small)
-                } else if let result = testResult {
-                    Label(result.message, systemImage: result.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                        .foregroundStyle(result.ok ? .green : .red)
-                        .font(.callout)
-                        .lineLimit(3)
-                        .textSelection(.enabled)
+        GlassSection(L("Размещение файлов"), footerLineHeight: 1.6) {
+            GlassRow(symbol: "folder", tint: .purple, title: L("Папка на сервере")) {
+                GlassField(placeholder: "uploads/screens", text: $profile.remotePath, width: 220)
+            }
+            GlassRow(symbol: "link", tint: .blue, title: L("Публичный URL папки")) {
+                GlassField(placeholder: "https://example.com/screens", text: $profile.publicURL, width: 220)
+            }
+            GlassRow(symbol: "lock", tint: .orange, title: L("Права файла"), showsDivider: false) {
+                GlassField(placeholder: "0644", text: $profile.filePermissions, width: 90)
+            }
+        } footer: {
+            VStack(alignment: .leading, spacing: 11 * 1.6 - 13.1) {
+                Text(L("Если папки нет — она будет создана."))
+                Text(L("Публичный URL нужен, чтобы после загрузки получить готовую ссылку на картинку."))
+                if hasInvalidPermissions {
+                    Text(L("Права указываются восьмеричным числом, например 0644 или 644. Сейчас они не применяются."))
+                        .foregroundStyle(.red)
+                } else {
+                    Text(L("Права выставляются файлу после загрузки. Если поле пустое, их задаёт сервер."))
                 }
             }
         }
+
+        GlassSection(trailing: 10) {
+            GlassRow(symbol: "waveform.path.ecg", tint: .green, title: L("Подключение"), height: 48) {
+                HStack(spacing: 12) {
+                    if testing {
+                        ProgressView().controlSize(.small)
+                    } else if let testResult {
+                        Text(testResult.ok ? L("успешно") : L("ошибка"))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(testResult.ok ? Color.green : .red)
+                    }
+                    GlassPrimaryButton(title: L("Проверить"), action: runTest)
+                        .disabled(testing || !profile.isConfigured)
+                }
+            }
+            if let result = testResult, !result.ok {
+                Text(result.message)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 10)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(SettingsStyle.divider(scheme)).frame(height: 0.5)
+                    }
+            }
+            GlassRow(symbol: "doc.on.doc", tint: .blue, title: L("Копировать ссылку после загрузки"), showsDivider: false) {
+                GlassSwitch(isOn: $copyLink).padding(.trailing, 4)
+            }
+        }
+        .padding(.top, 6)
         .onChange(of: profile.proto) { _, _ in testResult = nil }
+    }
+
+    private var hasInvalidPermissions: Bool {
+        !profile.filePermissions.trimmingCharacters(in: .whitespaces).isEmpty && profile.validFilePermissions == nil
     }
 
     private var protocolHint: String {
@@ -449,30 +550,42 @@ final class SettingsNavigation: ObservableObject {
 
 struct SettingsRootView: View {
     @ObservedObject private var navigation = SettingsNavigation.shared
+    @Environment(\.colorScheme) private var scheme
+
+    /// Matches the home window's scale: same width, controls at the same sizes.
+    static let width: CGFloat = 560
+    static let height: CGFloat = 720
+    /// Height of the title bar with its empty toolbar; the traffic lights sit on its middle line.
+    static let titleBarHeight: CGFloat = 52
 
     var body: some View {
-        // A segmented control instead of TabView: the native tabs can't show the pointing-hand cursor.
-        VStack(spacing: 0) {
-            Picker("", selection: $navigation.tab) {
-                Label(L("Основные"), systemImage: "keyboard").tag(SettingsTab.general)
-                Label(L("Серверы"), systemImage: "server.rack").tag(SettingsTab.server)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .handCursor()
-            .padding(.vertical, 10)
-            Divider()
-            Group {
-                switch navigation.tab {
-                case .general: GeneralSettingsView()
-                case .server: ServerSettingsView()
+        VStack(spacing: 12) {
+            Text(L("Настройки Shotty"))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(SettingsStyle.title(scheme))
+                .frame(height: Self.titleBarHeight)
+                .padding(.bottom, -12)
+                .allowsHitTesting(false)
+            // A custom segmented control instead of TabView: the native tabs can't show the pointing-hand cursor.
+            GlassSegmented(options: [SettingsTab.general, .server], selection: $navigation.tab,
+                           title: { $0 == .general ? L("Основные") : L("Серверы") }, kind: .tabs)
+            ScrollView {
+                Group {
+                    switch navigation.tab {
+                    case .general: GeneralSettingsView()
+                    case .server: ServerSettingsView()
+                    }
                 }
+                // The first caption is 6 pt below the tabs, not 8.
+                .padding(.top, -2)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 22)
             }
-            // Same background as the tab bar above, so the window reads as one surface.
-            .scrollContentBackground(.hidden)
+            .scrollIndicators(.automatic)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
-        .frame(width: 580, height: 720)
+        .frame(width: Self.width, height: Self.height)
+        .background(Glass.background(scheme))
+        // The content runs under the transparent title bar; the title row above leaves room for it.
+        .ignoresSafeArea()
     }
 }
