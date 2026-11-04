@@ -218,17 +218,53 @@ private struct WindowVisibilityReader: NSViewRepresentable {
 }
 
 /// Live server: a ring keeps spreading out from the dot.
-private struct PulseRing: View {
-    @State private var pulse = false
+/// Core Animation runs it in the render server; a SwiftUI `repeatForever` animation would
+/// re-render the whole window every frame (about 6% CPU while the window is visible).
+private struct PulseRing: NSViewRepresentable {
+    func makeNSView(context: Context) -> PulseView { PulseView() }
+    func updateNSView(_ view: PulseView, context: Context) {}
 
-    var body: some View {
-        Circle()
-            .fill(Glass.hex(0x22C55E))
-            .scaleEffect(pulse ? 2.2 : 0.8)
-            .opacity(pulse ? 0 : 0.45)
-            .onAppear {
-                withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
-            }
+    final class PulseView: NSView {
+        private let ring = CALayer()
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            ring.backgroundColor = NSColor(srgbRed: 0x22 / 255, green: 0xC5 / 255, blue: 0x5E / 255, alpha: 1).cgColor
+            ring.opacity = 0
+            layer?.addSublayer(ring)
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func layout() {
+            super.layout()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            ring.frame = bounds
+            ring.cornerRadius = min(bounds.width, bounds.height) / 2
+            CATransaction.commit()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            ring.removeAllAnimations()
+            guard window != nil else { return }
+            let scale = CABasicAnimation(keyPath: "transform.scale")
+            scale.fromValue = 0.8
+            scale.toValue = 2.2
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0.45
+            fade.toValue = 0
+            let group = CAAnimationGroup()
+            group.animations = [scale, fade]
+            group.duration = 1.6
+            group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            group.repeatCount = .infinity
+            ring.add(group, forKey: "pulse")
+        }
     }
 }
 

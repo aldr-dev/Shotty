@@ -48,7 +48,10 @@ enum Uploader {
         case .ftp, .ftps:
             let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             let timeout = max(180, size / 50_000)
-            let result = try await runCurl(config: config, extraArgs: ["--ftp-create-dirs", "-T", file.path],
+            var args = ["--ftp-create-dirs", "-T", file.path]
+            // "-" sends the command after the upload, "*" keeps a refused SITE CHMOD from failing it.
+            if let mode = config.filePermissions { args += ["-Q", "-*SITE CHMOD \(mode) \(fileName)"] }
+            let result = try await runCurl(config: config, extraArgs: args,
                                            url: ftpURL(config, fileName: fileName), timeout: timeout,
                                            onLaunch: monitor.map { m in { @Sendable pid in m.start(pid: pid) } })
             try checkCurl(result)
@@ -56,6 +59,8 @@ enum Uploader {
             var commands = mkdirCommands(for: config.remotePath)
             let remote = remoteFilePath(config.remotePath, fileName)
             commands.append("put \(quote(file.path)) \(quote(remote))")
+            // A leading "-" lets the batch finish even if the server refuses chmod.
+            if let mode = config.filePermissions { commands.append("-chmod \(mode) \(quote(remote))") }
             let result = try await runSFTP(config: config, commands: commands, workDir: workDir, onLaunch: monitor.map { m in { @Sendable pid in m.start(pid: pid) } })
             try checkSFTP(result)
         }

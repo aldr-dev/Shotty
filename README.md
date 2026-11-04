@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/aldr-dev/Shotty/releases"><img src="https://img.shields.io/github/v/release/aldr-dev/Shotty?include_prereleases&label=download" alt="Download"></a>
+  <a href="https://github.com/aldr-dev/Shotty/releases"><img src="https://img.shields.io/github/v/release/aldr-dev/Shotty?label=download" alt="Download"></a>
   <img src="https://img.shields.io/badge/macOS-15%2B-blue" alt="macOS 15+">
   <img src="https://img.shields.io/badge/Swift-AppKit%20%2B%20SwiftUI-orange" alt="Swift">
 </p>
@@ -21,7 +21,7 @@
 
 ## Download
 
-**[Shotty.dmg](https://github.com/aldr-dev/Shotty/releases/download/v1.1.1-beta/Shotty.dmg)** — universal build (Apple Silicon + Intel), macOS 15 or later.
+**[Shotty.dmg](https://github.com/aldr-dev/Shotty/releases/latest/download/Shotty.dmg)** — universal build (Apple Silicon + Intel), macOS 15 or later.
 
 Open the DMG and drag Shotty into Applications. All versions are on the [Releases](https://github.com/aldr-dev/Shotty/releases) page.
 
@@ -31,7 +31,7 @@ Open the DMG and drag Shotty into Applications. All versions are on the [Release
 - **Editor** — arrows, frames, text, highlighter, emoji, blur and pixelate; undo/redo and zoom
 - **Text recognition (OCR)** — select an area and the text goes straight to the clipboard
 - **Screen recording** — full screen or an area, system audio and microphone, pause, 5‑second countdown before start
-- **Upload** — FTP, FTPS and SFTP, several server profiles, passwords stored in Keychain, public link copied after upload
+- **Upload** — FTP, FTPS and SFTP, several server profiles, passwords stored in Keychain, optional file permissions after upload, public link copied after upload
 - **Notifications** — upload progress with Cancel, "link copied", "saved" with Show in Finder, errors with Retry
 - Russian and English UI, light and dark theme, launch at login
 
@@ -111,4 +111,4 @@ The script compiles a universal binary, generates the icon and packs `build/Shot
 
 ## Feedback
 
-This is a beta — please report bugs and ideas in [Issues](https://github.com/aldr-dev/Shotty/issues).
+Please report bugs and ideas in [Issues](https://github.com/aldr-dev/Shotty/issues).
