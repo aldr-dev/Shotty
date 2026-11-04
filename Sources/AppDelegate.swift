@@ -385,10 +385,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func showSettings(tab: SettingsTab) {
         SettingsNavigation.shared.tab = tab
         if settingsWindow == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 580, height: 720),
-                styleMask: [.titled, .closable],
+            let window = ScrollRoutingWindow(
+                contentRect: NSRect(x: 0, y: 0, width: SettingsRootView.width, height: SettingsRootView.height),
+                styleMask: [.titled, .closable, .fullSizeContentView],
                 backing: .buffered, defer: false)
+            window.titlebarAppearsTransparent = true
+            window.titlebarSeparatorStyle = .none
+            // The title is drawn by the view; an empty unified toolbar makes the title bar as tall
+            // as the artboard's title row, so the traffic lights line up with it.
+            window.titleVisibility = .hidden
+            window.toolbar = NSToolbar(identifier: "settings")
+            window.toolbarStyle = .unified
             window.title = L("Настройки Shotty")
             window.isReleasedWhenClosed = false
             let hosting = NSHostingView(rootView: Localized { SettingsRootView() })

@@ -314,6 +314,10 @@ private let englishStrings: [String: String] = [
     "Нажмите «Изменить», затем новое сочетание. Нужна хотя бы одна из клавиш ⌘, ⌥ или ⌃ (F1–F20 можно без них). Esc — отмена, ⌫ — отключить сочетание. Сочетания работают в любой программе.":
         "Click “Change”, then press a new shortcut. It needs at least one of ⌘, ⌥ or ⌃ (F1–F20 work alone). Esc cancels, ⌫ disables the shortcut. Shortcuts work in any app.",
     "Вернуть сочетания по умолчанию": "Restore Default Shortcuts",
+    "Нажмите на поле и введите новое сочетание. Нужна хотя бы одна из клавиш ⌘, ⌥ или ⌃ (F1–F20 можно без них). Esc — отмена, ⌫ — отключить. Сочетания работают в любой программе.":
+        "Click a field and press a new shortcut. It needs at least one of ⌘, ⌥ or ⌃ (F1–F20 work alone). Esc cancels, ⌫ disables. Shortcuts work in any app.",
+    "+ Задать": "+ Set",
+    "старт/стоп": "start/stop",
     "Нажмите сочетание…": "Press shortcut…",
     "Отмена": "Cancel",
     "Изменить": "Change",
@@ -329,6 +333,7 @@ private let englishStrings: [String: String] = [
     // Recording settings
     "Звук с экрана (системный звук)": "Screen audio (system sound)",
     "Звук с микрофона": "Microphone audio",
+    "системный звук": "system sound",
     "Показывать курсор": "Show cursor",
     "Сохранять в": "Save to",
     "Выбрать…": "Choose…",
@@ -362,12 +367,24 @@ private let englishStrings: [String: String] = [
     "Не проверять сертификат сервера": "Don't verify server certificate",
     "Подключение — %@": "Connection — %@",
     "Папка на сервере": "Remote folder",
+    "Права файла": "File permissions",
+    "необязательно, например 0644": "optional, e.g. 0644",
+    "Права выставляются файлу после загрузки. Если поле пустое, их задаёт сервер.":
+        "Permissions are set on the file after upload. Leave empty to use the server's default.",
+    "Права указываются восьмеричным числом, например 0644 или 644. Сейчас они не применяются.":
+        "Permissions must be an octal number such as 0644 or 644. They are not applied right now.",
     "Публичный URL папки": "Public folder URL",
     "Размещение файлов": "File Location",
-    "Если папки нет — она будет создана. Публичный URL нужен, чтобы после загрузки получить готовую ссылку на картинку.":
-        "The folder is created if missing. The public URL is used to build a ready link to the file after upload.",
+    "Если папки нет — она будет создана.": "The folder is created if missing.",
+    "Публичный URL нужен, чтобы после загрузки получить готовую ссылку на картинку.":
+        "The public URL is used to build a ready link to the file after upload.",
     "Проверить подключение": "Test Connection",
     "Подключение успешно": "Connection successful",
+    "Подключение": "Connection",
+    "Проверить": "Test",
+    "успешно": "successful",
+    "ошибка": "failed",
+    "Активный режим": "Active mode",
     "Обычный FTP без шифрования. Путь указывается относительно домашней папки пользователя.":
         "Plain FTP without encryption. The path is relative to the user's home folder.",
     "FTP с шифрованием TLS (explicit, AUTH TLS). Путь указывается относительно домашней папки пользователя.":
