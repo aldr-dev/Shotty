@@ -251,103 +251,114 @@ enum KeyNames {
 
 // MARK: - Settings UI
 
+extension HotKeyAction {
+    /// Row title in Settings; the recording hint moves to `settingsDetail`.
+    var settingsTitle: String { self == .record ? L("Запись видео") : title }
+
+    var settingsDetail: String? { self == .record ? L("старт/стоп") : nil }
+
+    var settingsSymbol: String {
+        switch self {
+        case .record: "record"
+        case .openHome: "app"
+        case .switchServer: "arrow.triangle.2.circlepath"
+        default: symbol
+        }
+    }
+
+    var settingsTint: SettingsStyle.Icon {
+        switch self {
+        case .area: .blue
+        case .window: .purple
+        case .fullScreen: .orange
+        case .ocr: .green
+        case .record: .red
+        case .switchServer, .openHome: .teal
+        }
+    }
+}
+
 struct GeneralSettingsView: View {
     @ObservedObject private var hotKeys = HotKeySettings.shared
     @ObservedObject private var preferences = AppPreferences.shared
     @ObservedObject private var launchAtLogin = LaunchAtLogin.shared
 
     var body: some View {
-        Form {
-            Section {
-                Toggle(isOn: Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.set($0) })) {
-                    Label(L("Запускать при входе в систему"), systemImage: "power")
+        VStack(alignment: .leading, spacing: 12) {
+            GlassSection(L("Интерфейс")) {
+                GlassRow(symbol: "power", tint: .blue, title: L("Запускать при входе в систему")) {
+                    GlassSwitch(isOn: Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.set($0) }))
                 }
                 if launchAtLogin.needsApproval {
-                    HStack {
-                        Text(L("Разрешите Shotty в «Системных настройках» → «Основные» → «Объекты входа»."))
-                            .font(.caption).foregroundStyle(.orange)
-                        Spacer()
-                        Button(L("Открыть")) { SMAppService.openSystemSettingsLoginItems() }
+                    GlassRow(symbol: "exclamationmark.triangle", tint: .orange,
+                             title: L("Разрешите Shotty в «Системных настройках» → «Основные» → «Объекты входа».")) {
+                        GlassButton(title: L("Открыть")) { SMAppService.openSystemSettingsLoginItems() }
                     }
                 }
                 if let error = launchAtLogin.error {
-                    Text(error).font(.caption).foregroundStyle(.red)
+                    GlassRow(symbol: "xmark.octagon", tint: .red, title: error) { EmptyView() }
                 }
-                Picker(selection: $preferences.language) {
-                    ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
-                } label: {
-                    Label(L("Язык"), systemImage: "globe")
+                GlassRow(symbol: "globe", tint: .green, title: L("Язык")) {
+                    GlassSegmented(options: AppLanguage.allCases, selection: $preferences.language,
+                                   title: \.title, itemWidth: 84)
                 }
-                .pickerStyle(.segmented)
-                .handCursor()
-                Picker(selection: $preferences.theme) {
-                    ForEach(AppTheme.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
-                } label: {
-                    Label(L("Оформление"), systemImage: "paintpalette")
+                GlassRow(symbol: "circle.lefthalf.filled", tint: .purple, title: L("Оформление"), showsDivider: false) {
+                    GlassSegmented(options: AppTheme.allCases, selection: $preferences.theme, title: \.title)
                 }
-                .pickerStyle(.segmented)
-                .handCursor()
-            } header: {
-                Label(L("Интерфейс"), systemImage: "macwindow")
             }
 
-            Section {
+            GlassSection(L("Горячие клавиши"), trailing: 10) {
                 ForEach(HotKeyAction.allCases) { action in
-                    LabeledContent {
+                    GlassRow(symbol: action.settingsSymbol, tint: action.settingsTint,
+                             title: action.settingsTitle, detail: action.settingsDetail, height: 42,
+                             showsDivider: action != HotKeyAction.allCases.last) {
                         HotKeyRecorder(action: action)
-                    } label: {
-                        Label(action.title, systemImage: action.symbol)
                     }
                 }
-            } header: {
-                Label(L("Горячие клавиши"), systemImage: "keyboard")
             } footer: {
-                Text(L("Нажмите «Изменить», затем новое сочетание. Нужна хотя бы одна из клавиш ⌘, ⌥ или ⌃ (F1–F20 можно без них). Esc — отмена, ⌫ — отключить сочетание. Сочетания работают в любой программе."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                HStack {
-                    Spacer()
-                    Button(L("Вернуть сочетания по умолчанию")) { hotKeys.resetToDefaults() }
+                VStack(alignment: .trailing, spacing: 10) {
+                    Text(L("Нажмите на поле и введите новое сочетание. Нужна хотя бы одна из клавиш ⌘, ⌥ или ⌃ (F1–F20 можно без них). Esc — отмена, ⌫ — отключить. Сочетания работают в любой программе."))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    GlassButton(title: L("Вернуть сочетания по умолчанию"), symbol: "arrow.counterclockwise", large: true) {
+                        hotKeys.resetToDefaults()
+                    }
+                    // The button lines up with the card, not with the indented note.
+                    .padding(.trailing, -8)
                 }
             }
 
             RecordingSettingsSection()
         }
-        .formStyle(.grouped)
         .onAppear { launchAtLogin.refresh() }
     }
 }
 
 struct RecordingSettingsSection: View {
     @ObservedObject private var settings = RecordingSettings.shared
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        Section {
-            Toggle(isOn: $settings.recordSystemAudio) {
-                Label(L("Звук с экрана (системный звук)"), systemImage: "speaker.wave.2")
+        GlassSection(L("Запись видео")) {
+            GlassRow(symbol: "speaker.wave.2", tint: .blue, title: L("Звук с экрана"), detail: L("системный звук")) {
+                GlassSwitch(isOn: $settings.recordSystemAudio)
             }
-            Toggle(isOn: $settings.recordMicrophone) {
-                Label(L("Звук с микрофона"), systemImage: "mic")
+            GlassRow(symbol: "mic", tint: .green, title: L("Звук с микрофона")) {
+                GlassSwitch(isOn: $settings.recordMicrophone)
             }
-            Toggle(isOn: $settings.showCursor) {
-                Label(L("Показывать курсор"), systemImage: "cursorarrow")
+            GlassRow(symbol: "cursorarrow", tint: .orange, title: L("Показывать курсор")) {
+                GlassSwitch(isOn: $settings.showCursor)
             }
-            LabeledContent {
-                HStack {
-                    Text(settings.folderDisplay).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    Button(L("Выбрать…")) { settings.chooseFolder() }
+            GlassRow(symbol: "folder", tint: .purple, title: L("Сохранять в"), showsDivider: false) {
+                HStack(spacing: 10) {
+                    Text(settings.folderDisplay)
+                        .font(.system(size: 12))
+                        .foregroundStyle(SettingsStyle.secondary(scheme))
+                        .lineLimit(1).truncationMode(.middle)
+                    GlassButton(title: L("Выбрать…")) { settings.chooseFolder() }
                 }
-            } label: {
-                Label(L("Сохранять в"), systemImage: "folder")
             }
-        } header: {
-            Label(L("Запись видео"), systemImage: "record.circle")
         } footer: {
             Text(L("Нажмите сочетание записи — появится панель, где можно выбрать весь экран или область и включить звук и микрофон. Во время записи доступны пауза и завершение; повторное нажатие сочетания тоже завершает запись. После записи видео можно сохранить или загрузить на сервер. «Сохранить» кладёт видео в эту папку."))
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -358,38 +369,36 @@ struct HotKeyRecorder: View {
     @State private var recording = false
     @State private var monitor: Any?
     @State private var message: String?
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 8) {
-                Text(recording ? L("Нажмите сочетание…") : hotKeys.display(for: action))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(recording ? Color.accentColor : (hotKeys.hotKey(for: action) == nil ? .secondary : .primary))
-                    .frame(minWidth: 150)
-                    .padding(.vertical, 5)
-                    .padding(.horizontal, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(recording ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.06)))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(recording ? Color.accentColor : .clear, lineWidth: 1.5))
-
-                Button(recording ? L("Отмена") : L("Изменить")) {
+                Button {
                     recording ? stopRecording() : startRecording()
+                } label: {
+                    field
                 }
-                .frame(minWidth: 80)
+                .buttonStyle(.hand(.plain))
+                .onHover { hovering = $0 }
+                .help(recording ? L("Отмена") : L("Изменить"))
 
                 Button {
                     hotKeys.set(nil, for: action)
                     message = nil
+                    stopRecording()
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(SettingsStyle.detail(scheme))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Circle())
                 }
-                .buttonStyle(.hand(.borderless))
-                .foregroundStyle(.secondary)
+                .buttonStyle(.hand(.plain))
                 .help(L("Отключить сочетание"))
-                .disabled(recording || hotKeys.hotKey(for: action) == nil)
+                .opacity(hotKeys.hotKey(for: action) == nil && !recording ? 0 : 1)
+                .disabled(hotKeys.hotKey(for: action) == nil && !recording)
             }
 
             if let message {
@@ -399,7 +408,41 @@ struct HotKeyRecorder: View {
                     .font(.caption).foregroundStyle(.red)
             }
         }
+        .padding(.vertical, message != nil || hotKeys.failedActions.contains(action) ? 6 : 0)
         .onDisappear { stopRecording() }
+    }
+
+    private var field: some View {
+        let key = hotKeys.hotKey(for: action)
+        let dark = scheme == .dark
+        let shape = Capsule()
+        let text = recording ? L("Нажмите сочетание…") : (key?.displayString ?? L("+ Задать"))
+        return Text(text)
+            .font(.system(size: recording ? 11 : 12, weight: key == nil || recording ? .medium : .semibold))
+            .tracking(key == nil || recording ? 0 : 0.48)
+            .foregroundStyle(recording ? (dark ? Glass.hex(0xCFE0FF) : Glass.hex(0x1F4F9A))
+                                       : (key == nil ? SettingsStyle.secondary(scheme) : SettingsStyle.primary(scheme)))
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .frame(width: 128, height: 28)
+            .background {
+                if recording {
+                    ZStack {
+                        shape.inset(by: -3).fill(dark ? Glass.hex(0x3A6BFF, 0.18) : Glass.hex(0x2F62E8, 0.18))
+                        shape.fill(dark ? Glass.hex(0x3A6BFF, 0.18) : Color.white.opacity(0.85))
+                            .overlay(shape.strokeBorder(SettingsStyle.focus(scheme), lineWidth: 1))
+                    }
+                    .shadow(color: dark ? Glass.hex(0x3A6BFF, 0.35) : .clear, radius: 9)
+                } else if key == nil {
+                    shape.strokeBorder(dark ? Color.white.opacity(0.28) : Glass.hex(0x102A54, 0.3),
+                                       style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                } else {
+                    shape.fill(dark ? Color.white.opacity(hovering ? 0.14 : 0.08) : Color.white.opacity(hovering ? 0.85 : 0.7))
+                        .overlay(shape.strokeBorder(dark ? Color.white.opacity(0.16) : Color.white.opacity(0.7), lineWidth: 0.5))
+                        .shadow(color: dark ? .clear : SettingsStyle.smallShadow, radius: 1.5, y: 1)
+                }
+            }
+            .contentShape(shape)
     }
 
     private func startRecording() {
