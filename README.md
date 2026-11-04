@@ -15,8 +15,8 @@
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/editor-dark.png">
-  <img src="docs/screenshots/editor.png" alt="Shotty editor with arrows, frames, text, blur and emoji">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/v1.0/editor-dark.png">
+  <img src="docs/screenshots/v1.0/editor.png" alt="Shotty editor with arrows, frames, text, blur and emoji">
 </picture>
 
 ## Download
@@ -40,8 +40,8 @@ Open the DMG and drag Shotty into Applications. All versions are on the [Release
 ### Home
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/home-dark.png">
-  <img src="docs/screenshots/home.png" width="600" alt="Shotty home window">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/v1.0/home-dark.png">
+  <img src="docs/screenshots/v1.0/home.png" width="600" alt="Shotty home window">
 </picture>
 
 ### Screen recording
@@ -49,8 +49,8 @@ Open the DMG and drag Shotty into Applications. All versions are on the [Release
 Pick full screen or an area, toggle system audio, microphone and cursor, then a countdown gives you time to get ready.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/recording-dark.png">
-  <img src="docs/screenshots/recording.png" width="680" alt="Recording toolbar, countdown and recording controls">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/v1.0/recording-dark.png">
+  <img src="docs/screenshots/v1.0/recording.png" width="680" alt="Recording toolbar, countdown and recording controls">
 </picture>
 
 ### Settings
@@ -59,14 +59,14 @@ Pick full screen or an area, toggle system audio, microphone and cursor, then a 
   <tr>
     <td>
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png">
-        <img src="docs/screenshots/settings-general.png" alt="General settings: language, theme and keyboard shortcuts">
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/v1.0/settings-general-dark.png">
+        <img src="docs/screenshots/v1.0/settings-general.png" alt="General settings: language, theme and keyboard shortcuts">
       </picture>
     </td>
     <td>
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-servers-dark.png">
-        <img src="docs/screenshots/settings-servers.png" alt="Server settings: FTP, FTPS and SFTP profiles">
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/v1.0/settings-servers-dark.png">
+        <img src="docs/screenshots/v1.0/settings-servers.png" alt="Server settings: FTP, FTPS and SFTP profiles">
       </picture>
     </td>
   </tr>
